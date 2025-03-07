@@ -9,6 +9,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::vec;
 
+//with great credit due to Codecrafters user nonreviad and others
+
 #[derive(Debug)]
 struct Database {
     page_size: u16,
@@ -316,12 +318,17 @@ enum RecordValue {
 
 }
 
+// fn parse_sql(args: Vec<String>) => () {
+   
+// }
+
 fn main() -> Result<()> {
     // Parse arguments
     let args = std::env::args().collect::<Vec<_>>();
     // debug args
     // let args = vec!["".to_string(),"sample.db".to_string(), ".dbinfo".to_string()];
     // let args = vec!["".to_string(),"sample.db".to_string(), ".tables".to_string()];
+    // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT COUNT(*) FROM apples".to_string()];
     match args.len() {
         0 | 1 => bail!("Missing <database path> and <command>"),
         2 => bail!("Missing <command>"),
@@ -350,7 +357,32 @@ fn main() -> Result<()> {
         }
         // _ => bail!("Missing or invalid command passed: {}", command),
         _ => {
-            // parse_sql(args);
+            //parse sql
+            let table_to_find = args[2].split(" ").last().unwrap();
+            //initialize database
+            let mut database = Database::new(&args[1])?;
+            let schema_tables = database.get_schema_table().unwrap();
+            for table in schema_tables {
+                if table.tbl_name == table_to_find {
+                    let table_rootpage = table.root_page;
+                    //navigate to table
+                    let page = database.read_page(table_rootpage as u16).unwrap();
+                    match page {
+                        Page::TableLeaf {cells} => {
+                            let row_count = cells.iter().count();
+                            println!("{}",row_count);
+                            break
+                        },
+                        _ => bail!("page should be a table leaf page")
+                }
+
+            };
+                println!("couldn't find table {}",table_to_find)
+            }
+            //find table name
+            //find root page
+            //read page
+            //get length of page cells of table
         }
     }
 
