@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
+mod sql;
 
 use anyhow::{bail, Ok, Result};
-use std::env::VarError;
+// use std::env::VarError;
 // use core::num;
 // use std::collections::btree_map::Range;
 use std::fs::File;
@@ -313,14 +314,114 @@ enum RecordValue {
     Blob {val: Vec<u8>},
     Fake0,
     Fake1,
-    Blog {val: Vec<u8>},
     VarChar {val:String}, 
 
 }
 
-// fn parse_sql(args: Vec<String>) => () {
-   
-// }
+impl ToString for RecordValue {
+    fn to_string(&self) -> String {
+        match self {
+            RecordValue::Null => "null".into(),
+            RecordValue::Int8 { val: n} => n.to_string(),
+            RecordValue::Int16 {val: n} => n.to_string(),
+            RecordValue::Int24 {val: n} => n.to_string(),
+            RecordValue::Int32 {val: n} => n.to_string(),
+            RecordValue::Int48 {val: n} => n.to_string(),
+            RecordValue::Int64 {val: n} => n.to_string(),
+            RecordValue::Double {val: n} => n.to_string(),
+            RecordValue::Blob {val: n} => format!("{:?}",n),
+            RecordValue::Fake0 => 0.to_string(),
+            RecordValue::Fake1 => 1.to_string(),
+            RecordValue::VarChar {val: n} => n.to_owned(),
+
+        }
+    }
+}
+
+fn parse_sql(args: Vec<String>) -> () {
+    //queries supported: 
+    // "SELECT COUNT(*) FROM apples"
+    // "SELECT name FROM apples"
+
+    //initialize database
+    let mut database = Database::new(&args[1]).unwrap();
+
+   // pretend parsing
+   let query: Vec<&str> = args[2].split(" ").collect();
+   let target_table = query[query.len()-1];
+   let selection = query[query.len()-3];
+   match selection.to_ascii_lowercase().as_str() {
+    "count(*)" => {
+        num_rows_in_table(&mut database, target_table);
+    },
+    _ => {
+        data_from_column(&mut database, selection,target_table);
+    }
+   }
+}
+
+fn num_rows_in_table(database: &mut Database, target_table: &str) -> () {
+    //initialize database
+    //maybe this can be done in parse_sql or somewhere else? 
+    let schema_tables = database.get_schema_table().unwrap();
+    for table in schema_tables {
+        if table.tbl_name == target_table {
+            let table_rootpage = table.root_page;
+            //navigate to table
+            let page = database.read_page(table_rootpage as u16).unwrap();
+            match page {
+                Page::TableLeaf {cells} => {
+                    let row_count = cells.iter().count();
+                    println!("{}",row_count);
+                    break
+                },
+                _ => panic!("page should be a table leaf page")
+        }
+
+    };
+        println!("couldn't find table {}",target_table)
+    }
+}
+
+fn data_from_column(database: &mut Database, selection:&str,target_table: &str) -> () {
+    let schema_tables = database.get_schema_table().unwrap();
+// CREATE TABLE apples
+// (
+// 	id integer primary key autoincrement,
+// 	name text,
+// 	color text
+// )
+    // get CREATE TABLE statement from schema
+    for table in schema_tables {
+        if table.tbl_name == target_table {
+            let table_rootpage = table.root_page;
+            let table_sql = table.sql;
+            
+            //get the column names from the CREATE TABLE query
+            let (_, (table_name, table_columns)) = sql::create_table(&table_sql).unwrap();
+            //get index of desired column
+            let column_index = table_columns.iter().position(|x| x[0]== selection).unwrap();
+            //navigate to table
+            let page = database.read_page(table_rootpage as u16).unwrap();
+            let mut column_data:Vec<String> = Vec::new();
+            match page {
+                Page::TableLeaf {cells} => {
+                    // iterate through rows on page, collect data in vec
+                    for cell in cells {
+                        column_data.push(cell.payload.values[column_index].to_string());
+                    }
+                    // print data
+                    for item in column_data {
+                        println!("{item}");
+                    }
+                },
+                _ => panic!("page should be a table leaf page")
+        }
+        }
+
+    }
+
+}
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -329,6 +430,7 @@ fn main() -> Result<()> {
     // let args = vec!["".to_string(),"sample.db".to_string(), ".dbinfo".to_string()];
     // let args = vec!["".to_string(),"sample.db".to_string(), ".tables".to_string()];
     // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT COUNT(*) FROM apples".to_string()];
+    // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT name FROM apples".to_string()];
     match args.len() {
         0 | 1 => bail!("Missing <database path> and <command>"),
         2 => bail!("Missing <command>"),
@@ -357,32 +459,8 @@ fn main() -> Result<()> {
         }
         // _ => bail!("Missing or invalid command passed: {}", command),
         _ => {
-            //parse sql
-            let table_to_find = args[2].split(" ").last().unwrap();
-            //initialize database
-            let mut database = Database::new(&args[1])?;
-            let schema_tables = database.get_schema_table().unwrap();
-            for table in schema_tables {
-                if table.tbl_name == table_to_find {
-                    let table_rootpage = table.root_page;
-                    //navigate to table
-                    let page = database.read_page(table_rootpage as u16).unwrap();
-                    match page {
-                        Page::TableLeaf {cells} => {
-                            let row_count = cells.iter().count();
-                            println!("{}",row_count);
-                            break
-                        },
-                        _ => bail!("page should be a table leaf page")
-                }
+            parse_sql(args);
 
-            };
-                println!("couldn't find table {}",table_to_find)
-            }
-            //find table name
-            //find root page
-            //read page
-            //get length of page cells of table
         }
     }
 
