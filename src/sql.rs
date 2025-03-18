@@ -12,6 +12,54 @@ use nom::{
     IResult, Parser,
 };
 
+// ***SELECT***
+
+    // "SELECT COUNT(*) FROM apples"
+    // "SELECT name FROM apples"
+    // "SELECT name, color FROM apples"
+
+pub fn select(i:&str) -> nom::IResult<&str, (&str, Vec<&str>)> {
+    let (remaining, (_, _, selected, _, _, _, table_name)) = (
+        tag_no_case("select"), 
+        multispace1,
+        selection,
+        multispace1,
+        tag_no_case("from"),
+        multispace1,
+        alphanumeric1
+    ).parse(i).unwrap();
+
+    Ok((remaining,(table_name,selected)))
+}
+
+//object of select statement
+fn selection(i:&str) -> nom::IResult<&str, Vec<&str>> {
+    //get count(*) or list of columns
+    //essential that count(*) is first because alt tries parsers in order, 
+    //and if alphanumeric1 were first, it would consume "count" and reject "(*)"
+    separated_list1(space_comma, alt((tag_no_case("count(*)"), alphanumeric1))).parse(i)
+}
+
+#[cfg(test)]
+#[test]
+fn test_select() -> () {
+let input = "SELECT name, color FROM apples";
+let (remaining, result) = select(input).unwrap();
+assert_eq!(remaining, "");
+assert_eq!(result, ("apples", vec!["name", "color"]));
+}
+
+#[cfg(test)]
+#[test]
+fn test_selection() -> () {
+let input = "name, color";
+let (remaining, result) = selection(input).unwrap();
+assert_eq!(remaining, "");
+assert_eq!(result, vec!["name", "color"]);
+}
+
+// ***CREATE TABLE***
+
 // CREATE TABLE apples
 // (
 // 	id integer primary key autoincrement,
@@ -21,7 +69,6 @@ use nom::{
 
 //get table name and columns from CREATE TABLE statement
 pub fn create_table(i: &str) -> nom::IResult<&str,(&str,Vec<Vec<&str>>)> {
-    // let my_result = (
     let (remaining, (_,_,table_name,_,table_columns)) = (
         tag_no_case("create table"), 
         multispace1,

@@ -342,22 +342,18 @@ fn parse_sql(args: Vec<String>) -> () {
     //queries supported: 
     // "SELECT COUNT(*) FROM apples"
     // "SELECT name FROM apples"
+    // "SELECT name, color FROM apples"
+
+    let sql_query = &args[2];
+    let (_, (target_table, selected)) = sql::select(&sql_query).unwrap();
 
     //initialize database
     let mut database = Database::new(&args[1]).unwrap();
 
-   // pretend parsing
-   let query: Vec<&str> = args[2].split(" ").collect();
-   let target_table = query[query.len()-1];
-   let selection = query[query.len()-3];
-   match selection.to_ascii_lowercase().as_str() {
-    "count(*)" => {
-        num_rows_in_table(&mut database, target_table);
-    },
-    _ => {
-        data_from_column(&mut database, selection,target_table);
+    match selected[0].to_ascii_lowercase().as_str() {
+        "count(*)" => num_rows_in_table(&mut database, target_table),
+        _ => data_from_columns(&mut database, selected, target_table),
     }
-   }
 }
 
 fn num_rows_in_table(database: &mut Database, target_table: &str) -> () {
@@ -383,7 +379,7 @@ fn num_rows_in_table(database: &mut Database, target_table: &str) -> () {
     }
 }
 
-fn data_from_column(database: &mut Database, selection:&str,target_table: &str) -> () {
+fn data_from_columns(database: &mut Database, selection:Vec<&str>,target_table: &str) -> () {
     let schema_tables = database.get_schema_table().unwrap();
 // CREATE TABLE apples
 // (
@@ -398,21 +394,37 @@ fn data_from_column(database: &mut Database, selection:&str,target_table: &str) 
             let table_sql = table.sql;
             
             //get the column names from the CREATE TABLE query
-            let (_, (table_name, table_columns)) = sql::create_table(&table_sql).unwrap();
+            let (_, (_, table_columns)) = sql::create_table(&table_sql).unwrap();
             //get index of desired column
-            let column_index = table_columns.iter().position(|x| x[0]== selection).unwrap();
+            let mut column_indices:Vec<usize> = Vec::new();
+            //handle (*) vs. column names
+            match selection[0] {
+                "(*)" => {
+                    column_indices = (0..table_columns.len()).collect()
+                },
+                _ => {
+                    for column in &selection {
+                        let column_index = table_columns.iter().position(|x| x[0] == *column).unwrap();
+                        column_indices.push(column_index);
+                    }
+                }
+            }
             //navigate to table
             let page = database.read_page(table_rootpage as u16).unwrap();
-            let mut column_data:Vec<String> = Vec::new();
+            let mut column_data:Vec<Vec<String>> = Vec::new();
             match page {
                 Page::TableLeaf {cells} => {
                     // iterate through rows on page, collect data in vec
                     for cell in cells {
-                        column_data.push(cell.payload.values[column_index].to_string());
+                        let mut row_data = Vec::new();
+                        for index in &column_indices {
+                        row_data.push(cell.payload.values[*index].to_string());
+                        }
+                        column_data.push(row_data);
                     }
                     // print data
                     for item in column_data {
-                        println!("{item}");
+                        println!("{}",item.join("|"));
                     }
                 },
                 _ => panic!("page should be a table leaf page")
@@ -431,6 +443,7 @@ fn main() -> Result<()> {
     // let args = vec!["".to_string(),"sample.db".to_string(), ".tables".to_string()];
     // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT COUNT(*) FROM apples".to_string()];
     // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT name FROM apples".to_string()];
+    // let args = vec!["".to_string(),"sample.db".to_string(), "SELECT name,color FROM apples".to_string()];
     match args.len() {
         0 | 1 => bail!("Missing <database path> and <command>"),
         2 => bail!("Missing <command>"),
